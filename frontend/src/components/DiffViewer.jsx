@@ -1,25 +1,24 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import axios from 'axios';
-import { GitCompareArrows, Loader2, FileText, GitMerge, Brain, ShieldAlert } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { GitCompareArrows, Loader2, FileText, GitMerge, Brain, ShieldAlert, Maximize, Minimize, AlertTriangle, MessageSquare, Columns, Table, ChevronUp, ChevronDown, ArrowDown } from 'lucide-react';
 
 const CODEBERT_BASE = import.meta.env.VITE_CODEBERT_API || 'http://localhost:8090';
 const CODEBERT_API = `${CODEBERT_BASE}/api/embeddings`;
 
 const rowClass = {
-  same: 'bg-rose-500/20',
+  same: 'bg-[var(--danger)]/10',
   replace: 'bg-transparent opacity-60',
   insert: 'bg-transparent opacity-60',
   delete: 'bg-transparent opacity-60',
 };
 
-const CodeHighlight = ({ code }) => {
+const CodeHighlight = React.memo(({ code }) => {
   if (!code) return null;
 
-  // Add zero-width spaces after punctuation to allow browser wrapping on minified code
   const spacedCode = code.replace(/([;{}])/g, '$1\u200B');
 
-  // Tokenizer regex
-  const tokenRegex = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b(?:import|public|private|protected|class|static|void|int|boolean|for|if|else|break|def|return|False|True|not|in|while|new)\b|\b(?:Scanner|String|System|out|arr|len|range|print|println)\b|\b\d+\b)/g;
+  const tokenRegex = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*|\/\*[\s\S]*?\*\/|\b(?:abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while|def|False|True|None|and|as|async|await|del|elif|except|from|global|is|lambda|nonlocal|not|or|pass|raise|with|yield|function|let|var|export|struct|impl|mut|fn|match|loop|pub|use|go|chan|defer|fallthrough|type)\b|\b(?:String|Integer|Double|System|Math|Scanner|List|Map|Set|Dict|Array|Console|Object|Promise|Vector|HashMap|print|println|out|len|range)\b|\b\d+(?:\.\d+)?\b|[+\-*/=<>!&|%^~]+)/g;
   
   const parts = spacedCode.split(tokenRegex);
 
@@ -27,23 +26,21 @@ const CodeHighlight = ({ code }) => {
     <>
       {parts.map((part, index) => {
         if (!part) return null;
-        if (/^["']/.test(part)) {
-          return <span key={index} className="text-green-400">{part}</span>;
+        if (/^["']/.test(part)) return <span key={index} className="text-emerald-600">{part}</span>;
+        if (/^\/\/|^\/\*/.test(part)) return <span key={index} className="text-[var(--text-tertiary)] italic">{part}</span>;
+        if (/^[+\-*/=<>!&|%^~]+$/.test(part)) return <span key={index} className="text-[var(--text-tertiary)]">{part}</span>;
+        if (/^(abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while|def|False|True|None|and|as|async|await|del|elif|except|from|global|is|lambda|nonlocal|not|or|pass|raise|with|yield|function|let|var|export|struct|impl|mut|fn|match|loop|pub|use|go|chan|defer|fallthrough|type)$/.test(part)) {
+          return <span key={index} className="text-pink-600 font-semibold">{part}</span>;
         }
-        if (/^(import|public|private|protected|class|static|void|int|boolean|for|if|else|break|def|return|False|True|not|in|while|new)$/.test(part)) {
-          return <span key={index} className="text-blue-400 font-semibold">{part}</span>;
+        if (/^(String|Integer|Double|System|Math|Scanner|List|Map|Set|Dict|Array|Console|Object|Promise|Vector|HashMap|print|println|out|len|range)$/.test(part)) {
+          return <span key={index} className="text-purple-600">{part}</span>;
         }
-        if (/^(Scanner|String|System|out|arr|len|range|print|println)$/.test(part)) {
-          return <span key={index} className="text-amber-300">{part}</span>;
-        }
-        if (/^\d+$/.test(part)) {
-          return <span key={index} className="text-purple-400">{part}</span>;
-        }
-        return <span key={index}>{part}</span>;
+        if (/^\d+(?:\.\d+)?$/.test(part)) return <span key={index} className="text-blue-600">{part}</span>;
+        return <span key={index} className="text-[var(--text-primary)]">{part}</span>;
       })}
     </>
   );
-};
+});
 
 const DiffViewer = ({ files, results, semanticData, selectedPair }) => {
   const candidatePairs = useMemo(() => {
@@ -56,7 +53,6 @@ const DiffViewer = ({ files, results, semanticData, selectedPair }) => {
       for (let j = i + 1; j < results.students.length; j += 1) {
         const score = results.matrix[i][j] ?? 0;
         if (score > 0) {
-          // Find the detailed result object
           const detail = (results.detailedResults || []).find(r => 
             (r.submissionA === results.students[i] && r.submissionB === results.students[j]) ||
             (r.submissionA === results.students[j] && r.submissionB === results.students[i])
@@ -71,19 +67,186 @@ const DiffViewer = ({ files, results, semanticData, selectedPair }) => {
         }
       }
     }
-    return pairs.sort((a, b) => b.weight - a.weight).slice(0, 24);
+    return pairs.sort((a, b) => b.weight - a.weight).slice(0, 250);
   }, [results]);
 
   const [selectedLocalPair, setSelectedLocalPair] = useState(null);
   const [diffData, setDiffData] = useState(null);
+  const [deepScanResult, setDeepScanResult] = useState(null);
+  const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [llmAnalysis, setLlmAnalysis] = useState(null);
+  const [analyzingLlm, setAnalyzingLlm] = useState(false);
+  const [viewMode, setViewMode] = useState('diff'); // 'diff' or 'split'
+  const [showInsights, setShowInsights] = useState(true);
+
+  const contentAreaRef = useRef(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const handleScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    // Show button if not at the bottom (with 100px threshold)
+    if (scrollHeight - scrollTop - clientHeight > 100) {
+      setShowScrollButton(true);
+    } else {
+      setShowScrollButton(false);
+    }
+  };
+
+  const isCrossLanguage = useMemo(() => {
+    if (!selectedLocalPair) return false;
+    const ext1 = selectedLocalPair.source.split('.').pop()?.toLowerCase();
+    const ext2 = selectedLocalPair.target.split('.').pop()?.toLowerCase();
+    return ext1 && ext2 && ext1 !== ext2;
+  }, [selectedLocalPair]);
 
   const fileById = useMemo(() => {
     return new Map((files || []).map((item) => [item.id, item]));
   }, [files]);
 
-  // Auto-run diff when selectedPair changes from parent
+  const { leftCode, rightCode } = useMemo(() => {
+    if (!selectedLocalPair) return { leftCode: '', rightCode: '' };
+    let lFile = fileById.get(selectedLocalPair.source);
+    let rFile = fileById.get(selectedLocalPair.target);
+    if (!lFile || !rFile) {
+        const allFiles = Array.from(fileById.values());
+        if (!lFile) lFile = allFiles.find(f => f.id.includes(selectedLocalPair.source) || selectedLocalPair.source.includes(f.id));
+        if (!rFile) rFile = allFiles.find(f => f.id.includes(selectedLocalPair.target) || selectedLocalPair.target.includes(f.id));
+    }
+    return { leftCode: lFile?.code || '', rightCode: rFile?.code || '' };
+  }, [selectedLocalPair, fileById]);
+
+  // Performance Optimization: Memoize the heavy code renders so scrolling doesn't lag when showScrollButton updates
+  const leftPaneContent = useMemo(() => {
+    return leftCode.split(/\r?\n/).map((line, i) => (
+      <div key={i} className="flex hover:bg-[var(--bg-elevated)] group transition-colors">
+        <div className="w-12 flex-shrink-0 bg-[var(--bg-secondary)] border-r border-[var(--border-default)] text-right pr-2 py-0.5 select-none text-[11px] font-mono text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]">
+          {i + 1}
+        </div>
+        <div className="flex-1 px-4 py-0.5 text-[11px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-words leading-relaxed min-w-0">
+          {line ? <CodeHighlight code={line} /> : ' '}
+        </div>
+      </div>
+    ));
+  }, [leftCode]);
+
+  const rightPaneContent = useMemo(() => {
+    return rightCode.split(/\r?\n/).map((line, i) => (
+      <div key={i} className="flex hover:bg-[var(--bg-elevated)] group transition-colors">
+        <div className="w-12 flex-shrink-0 bg-[var(--bg-secondary)] border-r border-[var(--border-default)] text-right pr-2 py-0.5 select-none text-[11px] font-mono text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]">
+          {i + 1}
+        </div>
+        <div className="flex-1 px-4 py-0.5 text-[11px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-words leading-relaxed min-w-0">
+          {line ? <CodeHighlight code={line} /> : ' '}
+        </div>
+      </div>
+    ));
+  }, [rightCode]);
+
+  const diffTableContent = useMemo(() => {
+    if (!diffData || !diffData.rows) return null;
+    return diffData.rows.map((row, idx) => {
+      const isBlankSame = row.type === 'same' && !(row.left || '').trim() && !(row.right || '').trim();
+      const rowBg = isBlankSame ? 'bg-transparent' : (rowClass[row.type] || rowClass.same);
+      const isSameText = row.type === 'same' && !isBlankSame;
+
+      return (
+        <tr key={`row-${idx}`} className={`${rowBg} hover:bg-[var(--bg-elevated)] transition-colors border-b border-[var(--border-default)]/30`}>
+          <td className="w-10 px-2 py-1.5 text-right text-[var(--text-tertiary)] select-none border-r border-[var(--border-default)]">{row.leftNo ?? ''}</td>
+          <td className={`px-4 py-1.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed ${
+            isSameText ? 'font-medium text-[var(--danger)]' : 'text-[var(--text-primary)]'
+          } border-r border-[var(--border-default)]`}>
+            <CodeHighlight code={row.left} />
+          </td>
+          <td className="w-10 px-2 py-1.5 text-right text-[var(--text-tertiary)] select-none border-r border-[var(--border-default)]">{row.rightNo ?? ''}</td>
+          <td className={`px-4 py-1.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed ${
+            isSameText ? 'font-medium text-[var(--danger)]' : 'text-[var(--text-primary)]'
+          }`}>
+            <CodeHighlight code={row.right} />
+          </td>
+        </tr>
+      );
+    });
+  }, [diffData]);
+
+  useEffect(() => {
+    if (isCrossLanguage) {
+      setViewMode('split');
+    } else {
+      setViewMode('diff');
+    }
+  }, [isCrossLanguage, selectedLocalPair]);
+
+  const runDeepScan = async (pairOverride = null) => {
+    const pairToScan = pairOverride || selectedLocalPair;
+    if (!pairToScan) return;
+    setScanning(true);
+    setDeepScanResult(null);
+    try {
+      let leftFile = fileById.get(pairToScan.source);
+      let rightFile = fileById.get(pairToScan.target);
+      
+      if (!leftFile || !rightFile) {
+        const leftName = pairToScan.source.split('/').pop();
+        const rightName = pairToScan.target.split('/').pop();
+        leftFile = Array.from(fileById.values()).find(f => f.id.endsWith(leftName));
+        rightFile = Array.from(fileById.values()).find(f => f.id.endsWith(rightName));
+      }
+
+      if (!leftFile || !rightFile) {
+          throw new Error("Files not found in memory");
+      }
+
+      const res = await axios.post(`${CODEBERT_API}/deepscan`, {
+        code1: leftFile.code,
+        code2: rightFile.code,
+        filename1: pairToScan.source,
+        filename2: pairToScan.target
+      });
+      setDeepScanResult(res.data);
+      if (res.data.error) toast.error(res.data.error);
+      else toast.success("AI Logic Scan complete!");
+    } catch (err) {
+      toast.error(err.message || "Failed to connect to AI Deep Scan service.");
+      setDeepScanResult({ error: err.message || "Failed to connect to AI Deep Scan service.", plagiarized: false, explanation: "Connection error." });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const runLlmAnalysis = async () => {
+    if (!selectedLocalPair) return;
+    setAnalyzingLlm(true);
+    setLlmAnalysis(null);
+    try {
+      let leftFile = fileById.get(selectedLocalPair.source);
+      let rightFile = fileById.get(selectedLocalPair.target);
+      
+      if (!leftFile || !rightFile) {
+        const allFiles = Array.from(fileById.values());
+        if (!leftFile) leftFile = allFiles.find(f => f.id.includes(selectedLocalPair.source));
+        if (!rightFile) rightFile = allFiles.find(f => f.id.includes(selectedLocalPair.target));
+      }
+      
+      const res = await axios.post(`${CODEBERT_BASE}/api/llm/analyze-translation`, {
+        code1: leftFile.code,
+        code2: rightFile.code,
+        filename1: selectedLocalPair.source,
+        filename2: selectedLocalPair.target
+      });
+      setLlmAnalysis(res.data);
+      if (res.data.error) toast.error(res.data.error);
+      else toast.success("Model Analysis complete!");
+    } catch (err) {
+      toast.error("Failed to connect to LLM service.");
+      setLlmAnalysis({ error: "Service unreachable" });
+    } finally {
+      setAnalyzingLlm(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedPair && selectedPair.student1 && selectedPair.student2) {
       runDiff({
@@ -98,26 +261,25 @@ const DiffViewer = ({ files, results, semanticData, selectedPair }) => {
     setSelectedLocalPair(pair);
     setLoading(true);
     setError('');
+    setDiffData(null);
+    setDeepScanResult(null);
+    setLlmAnalysis(null);
+    setShowInsights(true);
+
+    runDeepScan(pair);
 
     let leftFile = fileById.get(pair.source);
     let rightFile = fileById.get(pair.target);
 
     if (!leftFile || !rightFile) {
       const allFiles = Array.from(fileById.values());
-      if (!leftFile) {
-        leftFile = allFiles.find(f => f.id.includes(pair.source) || pair.source.includes(f.id) || (f.name && (f.name.includes(pair.source) || pair.source.includes(f.name))));
-      }
-      if (!rightFile) {
-        rightFile = allFiles.find(f => f.id.includes(pair.target) || pair.target.includes(f.id) || (f.name && (f.name.includes(pair.target) || pair.target.includes(f.name))));
-      }
+      if (!leftFile) leftFile = allFiles.find(f => f.id.includes(pair.source) || pair.source.includes(f.id));
+      if (!rightFile) rightFile = allFiles.find(f => f.id.includes(pair.target) || pair.target.includes(f.id));
     }
 
     if (!leftFile || !rightFile) {
       setLoading(false);
-      const missing = [];
-      if (!leftFile) missing.push(pair.source);
-      if (!rightFile) missing.push(pair.target);
-      setError(`Selected pair code files are not available: ${missing.join(', ')}`);
+      setError(`Selected pair code files are not available.`);
       return;
     }
 
@@ -130,7 +292,7 @@ const DiffViewer = ({ files, results, semanticData, selectedPair }) => {
       });
       setDiffData(res.data);
     } catch (err) {
-      setError('Failed to generate diff. Make sure CodeBERT service is running on port 8090.');
+      setError('Failed to generate diff. Service unavailable.');
     } finally {
       setLoading(false);
     }
@@ -138,163 +300,319 @@ const DiffViewer = ({ files, results, semanticData, selectedPair }) => {
 
   if (!files || files.length < 2) {
     return (
-      <div className="glass-card rounded-[2rem] border border-dashed border-cyan-100/30 p-10 text-center">
-        <h3 className="font-display text-2xl font-bold text-white">No Files Available For Diff</h3>
-        <p className="mt-2 text-cyan-100/65">Run an analysis and semantic embedding step before opening pairwise diffs.</p>
+      <div className="card p-10 text-center flex flex-col items-center gap-2">
+        <GitCompareArrows className="text-[var(--text-tertiary)]" size={32} />
+        <h3 className="text-lg font-semibold text-[var(--text-primary)]">No Files Available</h3>
+        <p className="text-sm text-[var(--text-secondary)]">Run an analysis to explore pairwise diffs.</p>
       </div>
     );
   }
 
   return (
-    <div className="glass-card rounded-[2rem] p-6 sm:p-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="font-display flex items-center gap-3 text-2xl font-bold text-white">
-            <GitCompareArrows className="text-orange-200" /> Pairwise Diff Explorer
-          </h3>
-          <p className="mt-1 text-sm text-cyan-100/70">Inspect high-similarity pairs to verify copied or transformed lines.</p>
+    <div className="flex flex-row h-full w-full overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-md">
+      
+      {/* Left Sidebar: Pairs List */}
+      <div className="w-72 sm:w-80 flex-shrink-0 flex flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)]/30 h-full overflow-hidden">
+        <div className="border-b border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-3 flex-shrink-0 flex items-center justify-between">
+          <h4 className="font-bold text-[var(--text-primary)] text-sm flex items-center gap-2">
+            <GitCompareArrows size={16} className="text-[var(--accent)]" /> Suspect Pairs
+          </h4>
+        </div>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1 scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent">
+          {candidatePairs.length === 0 && (
+            <div className="p-8 text-center text-sm text-[var(--text-tertiary)]">
+              No matching pairs available.
+            </div>
+          )}
+          {candidatePairs.map((pair) => (
+            <button
+              key={`${pair.source}-${pair.target}`}
+              onClick={() => runDiff(pair)}
+              className={`group w-full flex flex-col p-3 text-left transition-all rounded-lg border ${
+                selectedLocalPair?.source === pair.source && selectedLocalPair?.target === pair.target
+                  ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30 shadow-sm'
+                  : 'bg-transparent border-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-default)]'
+              }`}
+            >
+              <div className="mb-2 flex w-full items-center justify-between">
+                <span className={`badge ${
+                    pair.weight > 75 ? 'badge-danger' 
+                    : pair.weight >= 40 ? 'badge-warning'
+                    : 'badge-success'
+                } scale-90 origin-left`}>
+                  {pair.weight}% MATCH
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] opacity-0 transition-opacity group-hover:opacity-100">
+                  Inspect &rarr;
+                </span>
+              </div>
+              <div className="flex w-full items-center justify-between gap-1.5">
+                <p className="flex-1 truncate text-xs font-medium text-[var(--text-primary)]" title={pair.source.split('/').pop()}>
+                  {pair.source.split('/').pop()}
+                </p>
+                <span className="text-[var(--text-tertiary)] text-[10px] font-light">&harr;</span>
+                <p className="flex-1 truncate text-right text-xs font-medium text-[var(--text-primary)]" title={pair.target.split('/').pop()}>
+                  {pair.target.split('/').pop()}
+                </p>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {candidatePairs.length === 0 && (
-          <p className="text-sm text-cyan-100/65">No semantic links available yet. Generate embedding graph first.</p>
+      {/* Right Pane: Main Viewer */}
+      <div className={`flex-1 min-w-0 flex flex-col ${isFullscreen ? 'fixed inset-0 z-[100] bg-[var(--bg-primary)] animate-in fade-in duration-200' : 'h-full overflow-hidden'}`}>
+        
+        {loading && (
+          <div className="mb-4 flex flex-shrink-0 items-center gap-2 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3 text-sm text-[var(--accent)] font-medium">
+            <Loader2 className="animate-spin" size={16} /> Building diff view...
+          </div>
         )}
-        {candidatePairs.map((pair) => (
-          <button
-            key={`${pair.source}-${pair.target}`}
-            onClick={() => runDiff(pair)}
-            className={`rounded-xl border px-3 py-2 text-left text-xs transition-colors ${
-              selectedLocalPair?.source === pair.source && selectedLocalPair?.target === pair.target
-                ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-50 shadow-[0_0_15px_rgba(34,211,238,0.15)]'
-                : 'border-white/10 bg-white/5 text-cyan-100/70 hover:bg-white/10 hover:text-cyan-50'
-            }`}
-          >
-            <p className="font-semibold">{pair.source.split('/').pop()} ↔ {pair.target.split('/').pop()}</p>
-            <p className="mt-1 text-[11px] uppercase tracking-[0.12em]">Similarity {pair.weight}%</p>
-          </button>
-        ))}
-      </div>
 
-      {loading && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-cyan-100/20 bg-cyan-950/70 px-4 py-3 text-sm text-cyan-100">
-          <Loader2 className="animate-spin" size={16} /> Building diff view...
-        </div>
-      )}
+        {error && <p className="mb-4 flex-shrink-0 rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)]">{error}</p>}
 
-      {error && <p className="mb-4 rounded-xl border border-rose-100/35 bg-rose-500/20 px-4 py-3 text-sm text-rose-100">{error}</p>}
+        {!diffData && !loading && !error && (
+           <div className="flex-1 flex flex-col items-center justify-center rounded-xl border border-[var(--border-default)] border-dashed bg-[var(--bg-primary)]/50 text-center p-8">
+             <GitCompareArrows className="text-[var(--text-tertiary)] mb-4" size={48} />
+             <h3 className="text-lg font-semibold text-[var(--text-primary)]">Select a pair to compare</h3>
+             <p className="text-sm text-[var(--text-secondary)] mt-1">Choose a candidate pair from the sidebar to view semantic differences.</p>
+           </div>
+        )}
 
-      {diffData && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <div className="mb-6 overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-2xl backdrop-blur-md">
+        {diffData && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--bg-primary)] animate-in fade-in zoom-in-95 duration-300">
             {/* Header Strip */}
-            <div className="flex items-center justify-between border-b border-white/10 bg-black/40 px-6 py-4">
-              <h4 className="font-display text-lg font-bold text-white flex items-center">
-                {selectedLocalPair?.source.split('/').pop()} <span className="mx-3 text-white/20">↔</span> {selectedLocalPair?.target.split('/').pop()}
+            <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--border-default)] bg-[var(--bg-secondary)] px-5 py-3">
+              <h4 className="text-sm font-bold text-[var(--text-primary)] flex items-center">
+                {selectedLocalPair?.source.split('/').pop()} <span className="mx-2 text-[var(--text-tertiary)] text-xs">&harr;</span> {selectedLocalPair?.target.split('/').pop()}
               </h4>
-              {selectedLocalPair?.weight >= 75 ? (
-                <span className="rounded-full bg-rose-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-rose-400 border border-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.15)]">High Risk</span>
-              ) : selectedLocalPair?.weight >= 40 ? (
-                <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-400 border border-amber-500/30">Suspicious</span>
-              ) : (
-                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-400 border border-emerald-500/30">Safe</span>
+              <div className="flex items-center gap-2">
+                {selectedLocalPair?.details?.featureImportance && Object.keys(selectedLocalPair.details.featureImportance).length > 0 && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] border-r border-[var(--border-default)] pr-2 hidden sm:inline-block">
+                    Key Factor: {Object.entries(selectedLocalPair.details.featureImportance).sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]))[0][0]}
+                  </span>
+                )}
+                {(selectedLocalPair?.details?.isAnomaly || selectedLocalPair?.details?.anomaly) && (
+                  <span className="badge" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7' }}>&#9888; ANOMALY</span>
+                )}
+                <span className={`badge ${selectedLocalPair?.weight >= 75 ? 'badge-danger' : selectedLocalPair?.weight >= 40 ? 'badge-warning' : 'badge-success'}`}>
+                  {selectedLocalPair?.weight >= 75 ? 'High Risk' : selectedLocalPair?.weight >= 40 ? 'Suspicious' : 'Safe'}
+                </span>
+                <div className="w-px h-4 bg-[var(--border-default)] mx-1"></div>
+                <div className="flex bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md overflow-hidden p-0.5 shadow-sm">
+                  <button
+                    onClick={() => setViewMode('diff')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                      viewMode === 'diff' ? 'bg-[var(--accent)] text-white rounded shadow-sm' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <Table size={13} /> Diff
+                  </button>
+                  <button
+                    onClick={() => setViewMode('split')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                      viewMode === 'split' ? 'bg-[var(--accent)] text-white rounded shadow-sm' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <Columns size={13} /> Split
+                  </button>
+                </div>
+                <div className="w-px h-4 bg-[var(--border-default)] mx-1 hidden sm:block"></div>
+                <button 
+                  onClick={() => setIsFullscreen(!isFullscreen)}
+                  className="p-1.5 rounded-md hover:bg-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                  title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
+                >
+                  {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* MAIN SCROLLING CONTENT AREA (Unified ChatGPT Workspace) */}
+            <div 
+              ref={contentAreaRef}
+              onScroll={handleScroll}
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col bg-[var(--bg-primary)] scrollbar-thin scrollbar-thumb-[var(--border-default)] scrollbar-track-transparent relative"
+            >
+              {/* AI Insights Section (Scrolls naturally with code) */}
+              {(isCrossLanguage || deepScanResult || llmAnalysis) && (
+                <div className="flex-shrink-0 flex flex-col border-b border-[var(--border-default)] shadow-sm">
+                  {showInsights && (
+                    <div className="flex flex-col">
+                      {/* Cross Language Banner & LLM Analysis */}
+                      {isCrossLanguage && (
+                        <div className="bg-[var(--warning)]/10 border-b border-[var(--border-default)] px-5 py-4">
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="text-[var(--warning)] shrink-0 mt-0.5" size={18} />
+                            <div className="flex-1 min-w-0">
+                              <h5 className="text-sm font-bold text-[var(--warning)]">Cross-Language Pair Detected</h5>
+                              <p className="text-xs text-[var(--text-secondary)] mt-1">
+                                Lexical text overlap is inherently low for cross-language pairs. Rely on the Deep Scan and Semantic Analysis models to verify logic translations.
+                              </p>
+                              
+                              {/* LLM Output Box */}
+                              {llmAnalysis ? (
+                                <div className="mt-4 p-4 rounded-lg bg-[var(--bg-primary)] border border-blue-500/30 shadow-sm">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <MessageSquare size={16} className="text-blue-500" />
+                                    <span className="text-sm font-bold text-blue-600">Model Translation Analysis</span>
+                                  </div>
+                                  {llmAnalysis.error ? (
+                                    <p className="text-xs text-red-500">{llmAnalysis.error}</p>
+                                  ) : (
+                                    <p className="text-xs text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">{llmAnalysis.explanation}</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <button 
+                                  onClick={runLlmAnalysis}
+                                  disabled={analyzingLlm}
+                                  className="mt-3 flex items-center gap-2 text-xs font-semibold bg-white border border-[var(--border-default)] shadow-sm px-4 py-2 rounded-lg text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-50"
+                                >
+                                  {analyzingLlm ? <Loader2 size={14} className="animate-spin text-blue-500" /> : <MessageSquare size={14} className="text-blue-500" />}
+                                  {analyzingLlm ? "Analyzing translation..." : "Analyze Translation with Model"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* AI Deep Scan Module */}
+                      <div className={`px-5 py-4 ${deepScanResult ? (deepScanResult.plagiarized ? 'bg-[var(--danger)]/5' : 'bg-[var(--success)]/5') : 'bg-[var(--bg-elevated)]'}`}>
+                        {deepScanResult ? (
+                          <div className="flex items-start gap-4">
+                            <div className={`mt-0.5 rounded-lg p-2 ${deepScanResult.plagiarized ? 'bg-[var(--danger)]/10 text-[var(--danger)]' : 'bg-[var(--success)]/10 text-[var(--success)]'}`}>
+                              {deepScanResult.plagiarized ? <ShieldAlert size={18} /> : <FileText size={18} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-start">
+                                <h5 className={`text-sm font-bold ${deepScanResult.plagiarized ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
+                                  {deepScanResult.plagiarized ? 'Assessment: Plagiarism Detected' : 'Assessment: Safe'}
+                                </h5>
+                                <button onClick={() => runDeepScan()} disabled={scanning} className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1">
+                                  {scanning ? <Loader2 className="animate-spin" size={12} /> : <Brain size={12} />}
+                                  {scanning ? 'Scanning...' : 'Rescan'}
+                                </button>
+                              </div>
+                              {deepScanResult.error ? (
+                                <p className="mt-1 text-xs text-[var(--danger)]">{deepScanResult.error}</p>
+                              ) : (
+                                <p className="mt-1 text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">{deepScanResult.explanation}</p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="rounded-lg bg-purple-500/10 p-2 text-purple-600">
+                                <Brain size={18} />
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-bold text-purple-700">Deep Scan Available</h5>
+                                <p className="mt-0.5 text-xs text-[var(--text-secondary)] hidden sm:block">Analyze algorithmic logic using embedding models.</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => runDeepScan()} 
+                              disabled={scanning}
+                              className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700 transition-colors disabled:opacity-50"
+                            >
+                              {scanning ? <Loader2 className="animate-spin" size={14} /> : <Brain size={14} />}
+                              {scanning ? 'Scanning...' : 'Deep Scan'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <button 
+                    onClick={() => setShowInsights(!showInsights)}
+                    className="w-full bg-[var(--bg-secondary)] hover:bg-[var(--bg-elevated)] transition-colors py-1.5 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                  >
+                    {showInsights ? (
+                      <><ChevronUp size={14} /> Hide Insights</>
+                    ) : (
+                      <><ChevronDown size={14} /> Show Insights</>
+                    )}
+                  </button>
+                </div>
+              )}
+
+            {/* Code View (Diff or Split) */}
+            {viewMode === 'split' ? (
+              <div className="flex-1 flex bg-[var(--bg-primary)] divide-x divide-[var(--border-default)]">
+                {/* Left Pane */}
+                <div className="flex-1 relative min-w-0">
+                  <div className="flex flex-col min-h-full py-4">
+                    {leftPaneContent}
+                  </div>
+                </div>
+
+                {/* Right Pane */}
+                <div className="flex-1 relative min-w-0">
+                  <div className="flex flex-col min-h-full py-4">
+                    {rightPaneContent}
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <div className="flex-1 min-h-0">
+              <table className="w-full border-collapse text-xs table-fixed">
+                <thead className="sticky top-0 z-10 shadow-sm bg-[var(--bg-secondary)] border-b border-[var(--border-default)]">
+                  <tr>
+                    <th className="w-10 px-2 py-2 text-right font-semibold text-[var(--text-secondary)] select-none border-r border-[var(--border-default)]">#</th>
+                    <th className="w-[calc(50%-40px)] px-4 py-2 text-left font-semibold text-[var(--text-secondary)]">Original Snippet</th>
+                    <th className="w-10 px-2 py-2 text-right font-semibold text-[var(--text-secondary)] select-none border-x border-[var(--border-default)]">#</th>
+                    <th className="w-[calc(50%-40px)] px-4 py-2 text-left font-semibold text-[var(--text-secondary)]">Compared Snippet</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono text-[11px] leading-relaxed">
+                  {diffTableContent}
+                </tbody>
+              </table>
+            </div>
+            )}
+            
+              {/* Floating Scroll to Bottom Button */}
+              {showScrollButton && (
+                <button 
+                  onClick={() => contentAreaRef.current?.scrollTo({ top: contentAreaRef.current.scrollHeight, behavior: 'smooth' })}
+                  className="fixed bottom-16 right-8 p-2.5 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-default)] shadow-lg hover:bg-[var(--bg-secondary)] transition-all z-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] animate-in fade-in slide-in-from-bottom-2"
+                  title="Scroll to bottom"
+                >
+                  <ArrowDown size={18} />
+                </button>
               )}
             </div>
 
-            {/* 4 Metric Cards */}
-            {selectedLocalPair?.details && (
-              <div className="grid grid-cols-2 divide-x divide-y divide-white/10 sm:grid-cols-4 sm:divide-y-0">
-                {/* Token */}
-                <div className="flex flex-col items-center justify-center p-6 transition-colors hover:bg-white/5">
-                  <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-cyan-400">
-                    <FileText size={14} /> Token
-                  </div>
-                  <span className="font-display text-3xl font-bold text-white">
-                    {selectedLocalPair.details.tokenScore?.toFixed(1) || 0}%
-                  </span>
-                </div>
-                {/* Structural */}
-                <div className="flex flex-col items-center justify-center p-6 transition-colors hover:bg-white/5">
-                  <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-purple-400">
-                    <GitMerge size={14} /> Structural
-                  </div>
-                  <span className="font-display text-3xl font-bold text-white">
-                    {selectedLocalPair.details.structuralScore?.toFixed(1) || 0}%
-                  </span>
-                </div>
-                {/* Semantic */}
-                <div className="flex flex-col items-center justify-center p-6 transition-colors hover:bg-white/5">
-                  <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-blue-400">
-                    <Brain size={14} /> Semantic
-                  </div>
-                  <span className="font-display text-3xl font-bold text-white">
-                    {selectedLocalPair.details.semanticScore?.toFixed(1) || 0}%
-                  </span>
-                </div>
-                {/* Confidence */}
-                <div className="flex flex-col items-center justify-center p-6 transition-colors hover:bg-white/5">
-                  <div className={`mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest ${
-                      (selectedLocalPair.details.confidenceScore || 0) >= 80 ? 'text-emerald-400' : 'text-amber-400'
-                  }`}>
-                    <ShieldAlert size={14} /> Confidence
-                  </div>
-                  <span className="font-display text-3xl font-bold text-white">
-                    {selectedLocalPair.details.confidenceScore?.toFixed(1) || 0}%
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Footer Summary Strip */}
-            <div className="flex flex-wrap items-center justify-between border-t border-white/10 bg-black/40 px-6 py-3 text-xs text-white/70">
-              <div>
-                <span className="font-semibold text-white">Boilerplate ignored:</span> {selectedLocalPair?.details?.boilerplateRemovedCount || 0}
+            <div className="flex-shrink-0 flex items-center justify-between border-t border-[var(--border-default)] bg-gradient-to-r from-[var(--bg-elevated)] to-[var(--bg-secondary)] px-6 py-3 shadow-inner">
+              <div className="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-primary)] px-3 py-1.5 rounded-lg border border-[var(--border-default)] shadow-sm">
+                <ShieldAlert size={14} className="text-[var(--text-tertiary)]" />
+                <span className="text-xs font-medium">
+                  Boilerplate Ignored: <span className="font-bold text-[var(--text-primary)]">{selectedLocalPair?.details?.boilerplateRemovedCount || 0}</span>
+                </span>
               </div>
-              <div className="flex gap-4">
-                <span><span className="font-semibold text-white">Overlap:</span> {diffData.summary.overlapPercent}%</span>
-                <span><span className="font-semibold text-white">Changed:</span> {diffData.summary.changedLines}</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20 shadow-sm transition-all hover:bg-rose-500/20">
+                  <GitMerge size={14} className="text-rose-600 dark:text-rose-400" />
+                  <span className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                    Overlap: <span className="font-bold">{diffData.summary.overlapPercent}%</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 shadow-sm transition-all hover:bg-amber-500/20">
+                  <FileText size={14} className="text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    Changed: <span className="font-bold">{diffData.summary.changedLines}</span>
+                  </span>
+                </div>
               </div>
             </div>
+            
           </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20 shadow-inner backdrop-blur-sm">
-            <table className="w-full border-collapse text-xs table-fixed">
-              <thead>
-                <tr className="bg-black/40 text-white/70 border-b border-white/10">
-                  <th className="w-12 px-2 py-3 text-right font-semibold uppercase tracking-wider text-[10px] select-none">L#</th>
-                  <th className="w-[calc(50%-48px)] px-4 py-3 text-left font-semibold uppercase tracking-wider text-[10px]">Original Snippet</th>
-                  <th className="w-12 px-2 py-3 text-right font-semibold uppercase tracking-wider text-[10px] border-l border-white/5 select-none">R#</th>
-                  <th className="w-[calc(50%-48px)] px-4 py-3 text-left font-semibold uppercase tracking-wider text-[10px]">Compared Snippet</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono text-[11px] leading-relaxed">
-                {diffData.rows.map((row, idx) => {
-                  const isBlankSame = row.type === 'same' && !(row.left || '').trim() && !(row.right || '').trim();
-                  const rowBg = isBlankSame ? 'bg-transparent' : (rowClass[row.type] || rowClass.same);
-                  const isSameText = row.type === 'same' && !isBlankSame;
-
-                  return (
-                    <tr key={`row-${idx}`} className={`${rowBg} hover:bg-white/5 transition-colors`}>
-                      <td className="w-12 px-2 py-1 text-right text-white/30 select-none border-r border-white/5">{row.leftNo ?? ''}</td>
-                      <td className={`px-4 py-1.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-6 ${
-                        isSameText ? 'text-rose-200' : 'text-white/80'
-                      } border-r border-white/5`}>
-                        <CodeHighlight code={row.left} />
-                      </td>
-                      <td className="w-12 px-2 py-1.5 text-right text-white/30 select-none border-r border-white/5">{row.rightNo ?? ''}</td>
-                      <td className={`px-4 py-1.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-6 ${
-                        isSameText ? 'text-rose-200' : 'text-white/80'
-                      }`}>
-                        <CodeHighlight code={row.right} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
